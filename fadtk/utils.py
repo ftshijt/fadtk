@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 import numpy as np
-from typing import Union
+from typing import Union, Dict, Any
 
 from hypy_utils.nlp_utils import substr_between
 from hypy_utils.tqdm_utils import pmap
@@ -44,7 +44,7 @@ def calculate_embd_statistics_online(files: list[PathLike]) -> tuple[np.ndarray,
     else:
         cov = S / (n - 1)  # compute the covariance matrix
         return mu, cov
-    
+
 
 def find_sox_formats(sox_path: str) -> list[str]:
     """
@@ -66,3 +66,16 @@ def get_cache_embedding_path(model: str, audio_dir: PathLike) -> Path:
     """
     audio_dir = Path(audio_dir)
     return audio_dir.parent / "embeddings" / model / audio_dir.with_suffix(".npy").name
+
+
+def get_cache_embedding_path_versa(model: str, audio_key: str, cache_dir: PathLike) -> Path:
+    """
+    Get the path to the cached embedding npy file for an audio file.
+
+    :param model: The name of the model
+    :param audio_key: The key of audio file
+    :param cache_dir: The path of audio cache
+    """
+    cache_dir = Path(cache_dir)
+    return cache_dir / "embeddings" / model / audio_key
+
