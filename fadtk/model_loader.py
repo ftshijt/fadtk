@@ -646,24 +646,26 @@ class WhisperModel(ModelLoader):
 
 
 def get_all_models() -> list[ModelLoader]:
+
     ms = [
         CLAPModel('2023'),
-        CLAPLaionModel('audio'), CLAPLaionModel('music'),
-        VGGishModel(), 
-        *(MERTModel(layer=v) for v in range(1, 13)),
-        EncodecEmbModel('24k'), EncodecEmbModel('48k'), 
+        CLAPLaionModel('audio'), 
+        CLAPLaionModel('music'),
+        # VGGishModel(), 
+        # *(MERTModel(layer=v) for v in range(1, 13)),
+        # EncodecEmbModel('24k'), EncodecEmbModel('48k'), 
         # DACModel(),
         # CdpamModel('acoustic'), CdpamModel('content'),
-        *(W2V2Model('base', layer=v) for v in range(1, 13)),
-        *(W2V2Model('large', layer=v) for v in range(1, 25)),
-        *(HuBERTModel('base', layer=v) for v in range(1, 13)),
-        *(HuBERTModel('large', layer=v) for v in range(1, 25)),
-        *(WavLMModel('base', layer=v) for v in range(1, 13)),
-        *(WavLMModel('base-plus', layer=v) for v in range(1, 13)),
-        *(WavLMModel('large', layer=v) for v in range(1, 25)),
-        WhisperModel('tiny'), WhisperModel('small'),
-        WhisperModel('base'), WhisperModel('medium'),
-        WhisperModel('large'),
+        # *(W2V2Model('base', layer=v) for v in range(1, 13)),
+        # *(W2V2Model('large', layer=v) for v in range(1, 25)),
+        # *(HuBERTModel('base', layer=v) for v in range(1, 13)),
+        # *(HuBERTModel('large', layer=v) for v in range(1, 25)),
+        # *(WavLMModel('base', layer=v) for v in range(1, 13)),
+        # *(WavLMModel('base-plus', layer=v) for v in range(1, 13)),
+        # *(WavLMModel('large', layer=v) for v in range(1, 25)),
+        # WhisperModel('tiny'), WhisperModel('small'),
+        # WhisperModel('base'), WhisperModel('medium'),
+        # WhisperModel('large'),
     ]
     if importlib.util.find_spec("dac") is not None:
         ms.append(DACModel())
@@ -671,3 +673,43 @@ def get_all_models() -> list[ModelLoader]:
         ms += [CdpamModel('acoustic'), CdpamModel('content')]
 
     return ms
+
+
+def get_model(fad_embedding) -> ModelLoader:
+    if fad_embedding == "default":
+        return CLAPLaionModel('audio')
+    elif fad_embedding == "clap-laion-audio":
+        return CLAPLaionModel('audio')
+    elif fad_embedding == "clap-laion-music":
+        return CLAPLaionModel('music')
+    elif fad_embedding == "clap-2023":
+        return CLAPModel('2023')
+    elif fad_embedding == "vggish":
+        return VGGishModel()
+    elif "mert-" in fad_embedding:
+        layer = int(fad_embedding.split("-")[-1])
+        return MERTModel(layer=layer)
+    elif "wav2vec2" in fad_embedding:
+        size, layer = fad_embedding.split("-")[-2:]
+        return W2V2Model(size, layer=v)
+    elif "hubert" in fad_embedding:
+        size, layer = fad_embedding.split("-")[-2:]
+        return HuBERTModel(size, layer=layer)
+    elif "wavlm" in fad_embedding:
+        size, layer = fad_embedding.split("-")[-2:]
+        return WavLMModel(size, layer=layer)
+    elif "whisper" in fad_embedding:
+        size = fad_embedding.split("-")[-1]
+        return WhisperModel(size)
+    elif "dac" in fad_embedding:
+        return DACModel()
+    elif "encodec-24k" in fad_embedding:
+        return EncodecEmbModel('24k')
+    elif "encodec-48k" in fad_embedding:
+        return EncodecEmbModel('48k')
+    elif "cdpam-acoustic" in fad_embedding:
+        return CdpamModel('acoustic')
+    elif "cdpam-content" in fad_embedding:
+        return CdpamModel('content')
+    else:
+        raise ValueError(f"Unknown FAD embedding: {fad_embedding}")

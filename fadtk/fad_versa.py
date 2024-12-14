@@ -1,3 +1,4 @@
+import datetime
 import functools
 import traceback
 from typing import NamedTuple, Union, Dict, Any
@@ -28,6 +29,8 @@ def calc_embd_statistics(embd_lst: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculate the mean and covariance matrix of a list of embeddings.
     """
+    if len(embd_lst) == 1:
+        return embd_lst[0], np.zeros((embd_lst[0].shape[-1], embd_lst[0].shape[-1]))
     return np.mean(embd_lst, axis=0), np.cov(embd_lst, rowvar=False)
 
 
@@ -118,27 +121,43 @@ class FrechetAudioDistance:
         # Disable gradient calculation because we're not training
         torch.autograd.set_grad_enabled(False)
 
-    def load_audio(self, f: Union[str, Path, np.array]):
+    def load_audio(self, f: Union[str, Path, np.array], cache_dir: PathLike, fsorig: int = 16000, audio_key: str = None):
+
+        # Create a directory for storing normalized audio files
+        cache_dir = Path(cache_dir) / "convert" / str(self.ml.sr)
+        if audio_key is not None:
+            new = (cache_dir / audio_key).with_suffix(".wav")
+        else:
+            random_filename = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+            new = (cache_dir / random_filename).with_suffix(".wav")
+
         # For case of raw audio, directly return (assume preprocessed by versa)
-        if type(f) is not str and type(f) is not Path:
-            return f
-        
-        f = Path(f)
+        if type(f) is tuple:
+            x = torch.tensor(f[1]) # return the audio data (from (fs, audio) tuple)
+        elif type(f) is not str and type(f) is not Path:
+            x = torch.tensor(f)
+        else:
+            x = None
+            f = Path(f)
 
-        x, fsorig = torchaudio.load(str(f))
-        x = torch.mean(x,0).unsqueeze(0) # convert to mono
-        resampler = torchaudio.transforms.Resample(
-            fsorig,
-            self.ml.sr,
-            lowpass_filter_width=64,
-            rolloff=0.9475937167399596,
-            resampling_method="sinc_interp_kaiser",
-            beta=14.769656459379492,
-        )
-        y = resampler(x)
-        return self.ml.load_wav(y.cpu().numpy())
+        if not new.exists():
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            if x is None:
+                x, fsorig = torchaudio.load(str(f))
+            x = torch.mean(x,0).unsqueeze(0) # convert to mono
+            resampler = torchaudio.transforms.Resample(
+                fsorig,
+                self.ml.sr,
+                lowpass_filter_width=64,
+                rolloff=0.9475937167399596,
+                resampling_method="sinc_interp_kaiser",
+                beta=14.769656459379492,
+            )
+            y = resampler(x)
+            torchaudio.save(new, y, self.ml.sr, encoding="PCM_S", bits_per_sample=16)
+        return self.ml.load_wav(new)
 
-    def cache_embedding_file(self, audio_key: str, audio_dir: PathLike, cache_dir: PathLike):
+    def cache_embedding_file(self, audio_key: str, audio_dir: PathLike, cache_dir: PathLike, fsorig: int = 16000):
         """
         Compute embedding for an audio file and cache it to a file.
         """
@@ -148,16 +167,16 @@ class FrechetAudioDistance:
             return
 
         # Load file, get embedding, save embedding
-        wav_data = self.load_audio(audio_dir)
+        wav_data = self.load_audio(audio_dir, cache_dir, fsorig, audio_key)
         embd = self.ml.get_embedding(wav_data)
         cache.parent.mkdir(parents=True, exist_ok=True)
         np.save(cache, embd)
     
-    def calculate_embedding_online(self, audio_dir: PathLike):
+    def calculate_embedding_online(self, audio_dir: PathLike, cache_dir: PathLike, fsorig: int = 16000):
         """
         Compute embedding for an audio file online, return the embedding
         """
-        wav_data = self.load_audio(audio_dir)
+        wav_data = self.load_audio(audio_dir, cache_dir, fsorig, None)
         embd = self.ml.get_embedding(wav_data)
         return embd
 
@@ -166,6 +185,8 @@ class FrechetAudioDistance:
         Read embedding from a cached file.
         """
         cache = get_cache_embedding_path_versa(self.ml.name, audio_key, cache_dir)
+        if not str(cache).endswith(".npy"):
+            cache = Path(str(cache) + ".npy")
         assert cache.exists(), f"Embedding file {cache} does not exist, please run cache_embedding_file first."
         return np.load(cache)
     
@@ -185,6 +206,7 @@ class FrechetAudioDistance:
             raise ValueError("No files provided")
         if return_path:
             embd_list = [get_cache_embedding_path_versa(self.ml.name, audio_key, cache_dir) for audio_key in audio_files.keys()]
+            embd_list = [str(e) + ".npy" if not str(e).endswith(".npy") else e for e in embd_list]
             return embd_list
         # Load embeddings
         if max_count == -1:
@@ -210,7 +232,7 @@ class FrechetAudioDistance:
         Load embedding statistics from a directory.
         """
 
-        stats_dir = cache_dir / data_type / "stats" / self.ml.name
+        stats_dir = Path(cache_dir) / data_type / "stats" / self.ml.name
         if stats_dir.exists():
             log.info(f"Embedding statistics is already cached for {cache_dir}, loading...")
             mu = np.load(stats_dir / "mu.npy")
@@ -219,7 +241,7 @@ class FrechetAudioDistance:
 
         log.info(f"Loading embedding files from {cache_dir}...")
         
-        embd_list = self.load_embeddings(eval_files, cache_dir, max_count=-1, return_path=True)
+        embd_list = self.load_embeddings(eval_files, Path(cache_dir) / data_type, max_count=-1, return_path=True)
         mu, cov = calculate_embd_statistics_online(embd_list)
         log.info("> Embeddings statistics calculated.")
 
@@ -256,10 +278,12 @@ class FrechetAudioDistance:
         log.info(f"Calculating FAD-inf for {self.ml.name}...")
         # 1. Load background embeddings
         mu_base, cov_base = self.load_stats(baseline_files, cache_dir, data_type="baseline")
-        embeds = self._load_embeddings(eval_files, cache_dir, concat=True)
+        embeds = self._load_embeddings(eval_files, Path(cache_dir) / "eval", concat=True)
         
         # Calculate maximum n
         max_n = len(embeds)
+        min_n = min(min_n, max_n)
+        steps = min(steps, int(max_n - min_n) + 1)
 
         # Generate list of ns to use
         ns = [int(n) for n in np.linspace(min_n, max_n, steps)]
