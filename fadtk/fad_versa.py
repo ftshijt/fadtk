@@ -12,6 +12,7 @@ from hypy_utils import write
 from hypy_utils.tqdm_utils import tq, tmap
 from hypy_utils.logging_utils import setup_logger
 
+from .kid import compute_kernel_distance as calc_kernel_distance
 from .model_loader import ModelLoader
 from .utils import *
 
@@ -310,6 +311,27 @@ class FrechetAudioDistance:
 
         # Since intercept is the FAD-inf, we can just return it
         return FADInfResults(score=intercept, slope=slope, r2=r2, points=results)
+    
+    def score_kid(self, baseline_files: Dict[str, Any], eval_files: Dict[str, Any], cache_dir: Union[Path, str], n_subsets: int = 100, subset_size: int = 1000):
+        """
+        Calculate the KID score for a set of eval files.
+
+        :param baseline_files: baseline audio audios
+        :param eval_files: eval audio files
+        :param cache_dir: cache directory for stats and embeddings
+        :param n_subsets: number of subsets to use
+        :param subset_size: size of each subset
+        """
+        log.info(f"Calculating KID for {self.ml.name}...")
+
+        # 1. Load background embeddings
+        baseline_embeds = self._load_embeddings(baseline_files, Path(cache_dir) / "baseline", concat=True)
+        embeds = self._load_embeddings(eval_files, Path(cache_dir) / "eval", concat=True)
+
+        # 2. Generate random subsets
+        kid_score = calc_kernel_distance(embeds, baseline_embeds, kernel="rbf", kid_subsets=n_subsets, kid_subset_size=subset_size)
+
+        return kid_score
     
     def score_individual(self, baseline_files: Dict[str, Any], eval_audio_path, cache_dir: Union[Path, str], csv_name: Union[Path, str]) -> Path:
         """
