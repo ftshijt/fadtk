@@ -55,6 +55,7 @@ class ModelLoader(ABC):
     def load_wav(self, wav_file: Path):
         wav_data, _ = soundfile.read(wav_file, dtype='int16')
         wav_data = wav_data / 32768.0  # Convert to [-1.0, +1.0]
+        print(wav_data.shape, "wav_data", flush=True)
 
         return wav_data
 

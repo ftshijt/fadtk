@@ -144,7 +144,7 @@ class FrechetAudioDistance:
             cache_dir.mkdir(parents=True, exist_ok=True)
             if x is None:
                 x, fsorig = torchaudio.load(str(f))
-            x = torch.mean(x,0).unsqueeze(0) # convert to mono
+            x = torch.mean(x.float(),1).unsqueeze(0) # convert to mono
             resampler = torchaudio.transforms.Resample(
                 fsorig,
                 self.ml.sr,
